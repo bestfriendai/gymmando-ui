@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import LiveKit
+import Combine
 
 // MARK: - Connection State
 enum ConnectionState: Equatable {
@@ -365,8 +366,6 @@ final class AISessionViewModel: ObservableObject {
         localAudioLevel = 0
     }
 }
-
-import Combine
 
 // MARK: - Session Waveform View
 struct SessionWaveformView: View {

@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SwiftUI
 
 // MARK: - Analytics Events
 enum AnalyticsEvent: String {
@@ -174,8 +175,6 @@ final class AnalyticsService {
 }
 
 // MARK: - View Extension for Screen Tracking
-import SwiftUI
-
 struct ScreenTrackingModifier: ViewModifier {
     let screenName: String
 

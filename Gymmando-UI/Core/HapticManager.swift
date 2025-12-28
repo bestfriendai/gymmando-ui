@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 
 /// Centralized haptic feedback manager
 final class HapticManager {
@@ -109,8 +110,6 @@ final class HapticManager {
 }
 
 // MARK: - SwiftUI View Modifier
-import SwiftUI
-
 struct HapticButtonStyle: ButtonStyle {
     let hapticStyle: HapticManager.ImpactStyle
 

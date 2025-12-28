@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import Combine
+import SwiftUI
 
 /// Network connection status
 enum NetworkStatus: Equatable {
@@ -86,8 +87,6 @@ final class NetworkMonitor: ObservableObject {
 }
 
 // MARK: - Network Status Banner View
-import SwiftUI
-
 struct NetworkStatusBanner: View {
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
     @State private var showBanner = false
