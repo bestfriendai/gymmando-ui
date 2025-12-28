@@ -77,27 +77,8 @@ extension Font {
 }
 
 // MARK: - Reduce Motion Support
-struct ReduceMotionModifier: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
-
-    let animation: Animation
-    let reducedAnimation: Animation
-
-    func body(content: Content) -> some View {
-        content
-            .animation(reduceMotion ? reducedAnimation : animation, value: UUID())
-    }
-}
-
-extension View {
-    /// Applies animation that respects Reduce Motion setting
-    func reduceMotionAnimation(
-        _ animation: Animation = .spring(),
-        reduced: Animation = .linear(duration: 0.001)
-    ) -> some View {
-        modifier(ReduceMotionModifier(animation: animation, reducedAnimation: reduced))
-    }
-}
+// Note: The primary Reduce Motion implementation is in DesignTokens.swift
+// Use motionSensitiveAnimation(_:value:) or withReducedMotionAlternative for animations
 
 // MARK: - Accessibility Identifiers
 enum AccessibilityID {
