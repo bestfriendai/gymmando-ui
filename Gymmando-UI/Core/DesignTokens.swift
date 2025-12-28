@@ -237,6 +237,102 @@ struct DestructiveButtonStyle: ButtonStyle {
     }
 }
 
+// MARK: - Dynamic Type Support
+extension DesignTokens.Typography {
+    /// Returns a font that scales with Dynamic Type
+    static func scaled(_ style: Font.TextStyle) -> Font {
+        Font.system(style)
+    }
+
+    /// Custom scaled font that respects Dynamic Type
+    static func customScaled(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default, relativeTo textStyle: Font.TextStyle = .body) -> Font {
+        Font.system(size: size, weight: weight, design: design)
+            .leading(.standard)
+    }
+}
+
+// MARK: - Reduce Motion Modifier
+struct MotionSensitiveModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
+    let animation: Animation
+    let value: AnyHashable
+
+    func body(content: Content) -> some View {
+        content
+            .animation(reduceMotion ? nil : animation, value: value)
+    }
+}
+
+extension View {
+    /// Applies animation only when Reduce Motion is off
+    func motionSensitiveAnimation<V: Equatable>(_ animation: Animation, value: V) -> some View {
+        self.animation(animation, value: value)
+            .transaction { transaction in
+                if UIAccessibility.isReduceMotionEnabled {
+                    transaction.animation = nil
+                }
+            }
+    }
+
+    /// Provides an alternative for reduced motion
+    func withReducedMotionAlternative<V: View>(@ViewBuilder alternative: () -> V) -> some View {
+        modifier(ReducedMotionAlternativeModifier(alternative: alternative))
+    }
+}
+
+struct ReducedMotionAlternativeModifier<Alternative: View>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    let alternative: () -> Alternative
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            alternative()
+        } else {
+            content
+        }
+    }
+}
+
+// MARK: - Reduce Transparency Modifier
+extension View {
+    /// Adjusts opacity based on Reduce Transparency setting
+    func reduceTransparencyAware(defaultOpacity: Double = 0.8, reducedOpacity: Double = 1.0) -> some View {
+        modifier(ReduceTransparencyModifier(defaultOpacity: defaultOpacity, reducedOpacity: reducedOpacity))
+    }
+}
+
+struct ReduceTransparencyModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) var reduceTransparency
+    let defaultOpacity: Double
+    let reducedOpacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(reduceTransparency ? reducedOpacity : defaultOpacity)
+    }
+}
+
+// MARK: - Bold Text Modifier
+extension View {
+    /// Adjusts font weight based on Bold Text setting
+    func boldTextAware() -> some View {
+        modifier(BoldTextModifier())
+    }
+}
+
+struct BoldTextModifier: ViewModifier {
+    @Environment(\.legibilityWeight) var legibilityWeight
+
+    func body(content: Content) -> some View {
+        if legibilityWeight == .bold {
+            content.fontWeight(.semibold)
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Previews
 #Preview("Design Tokens") {
     ScrollView {

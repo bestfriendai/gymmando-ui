@@ -39,6 +39,9 @@ struct ContentView: View {
                             .font(.system(size: DesignTokens.IconSize.md))
                             .foregroundColor(Color.App.textSecondary)
                     }
+                    .accessibilityLabel("Settings")
+                    .accessibilityHint("Double tap to open settings")
+                    .accessibilityIdentifier(AccessibilityID.settingsButton)
                 }
             }
             .sheet(isPresented: $showSettings) {
@@ -57,6 +60,7 @@ struct ContentView: View {
             Text("Gymmando")
                 .font(DesignTokens.Typography.headlineMedium)
                 .foregroundColor(Color.App.textPrimary)
+                .accessibilityAddTraits(.isHeader)
 
             if let user = authViewModel.currentUser {
                 Text("Ready, \(user.firstName)?")
@@ -68,6 +72,7 @@ struct ContentView: View {
                     .foregroundColor(Color.App.textSecondary)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Main Content Section
@@ -108,6 +113,9 @@ struct ContentView: View {
                 )
             }
             .buttonStyle(ScaleButtonStyle())
+            .accessibilityLabel("Start AI Session")
+            .accessibilityHint("Double tap to talk to your AI fitness coach")
+            .accessibilityIdentifier(AccessibilityID.startSessionButton)
         }
         .screenPadding()
     }
@@ -119,12 +127,15 @@ struct ContentView: View {
                 .font(DesignTokens.Typography.titleSmall)
                 .foregroundColor(Color.App.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: DesignTokens.Spacing.md) {
                 StatCard(title: "Sessions", value: "0", icon: "waveform")
                 StatCard(title: "Minutes", value: "0", icon: "clock.fill")
                 StatCard(title: "Streak", value: "0", icon: "flame.fill")
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(AccessibilityID.statsSection)
         }
         .screenPadding()
         .padding(.bottom, DesignTokens.Spacing.xl)
@@ -142,6 +153,7 @@ struct StatCard: View {
             Image(systemName: icon)
                 .font(.system(size: DesignTokens.IconSize.md))
                 .foregroundColor(Color.App.primary)
+                .accessibilityHidden(true)
 
             Text(value)
                 .font(DesignTokens.Typography.headlineSmall)
@@ -155,6 +167,8 @@ struct StatCard: View {
         .padding(DesignTokens.Spacing.md)
         .background(Color.App.backgroundSecondary)
         .cornerRadius(DesignTokens.Radius.md)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 }
 
@@ -228,6 +242,7 @@ struct SettingsView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showLogoutConfirmation = false
+    @State private var showProfile = false
 
     var body: some View {
         NavigationStack {
@@ -238,27 +253,40 @@ struct SettingsView: View {
                     // User Info Section
                     Section {
                         if let user = authViewModel.currentUser {
-                            HStack(spacing: DesignTokens.Spacing.md) {
-                                Circle()
-                                    .fill(Color.App.primary.opacity(0.2))
-                                    .frame(width: 50, height: 50)
-                                    .overlay(
-                                        Text(String(user.firstName.prefix(1)).uppercased())
-                                            .font(DesignTokens.Typography.titleLarge)
-                                            .foregroundColor(Color.App.primary)
-                                    )
+                            Button {
+                                showProfile = true
+                                HapticManager.shared.impact(style: .light)
+                            } label: {
+                                HStack(spacing: DesignTokens.Spacing.md) {
+                                    Circle()
+                                        .fill(Color.App.primary.opacity(0.2))
+                                        .frame(width: 50, height: 50)
+                                        .overlay(
+                                            Text(String(user.firstName.prefix(1)).uppercased())
+                                                .font(DesignTokens.Typography.titleLarge)
+                                                .foregroundColor(Color.App.primary)
+                                        )
 
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(user.displayName ?? "User")
-                                        .font(DesignTokens.Typography.titleMedium)
-                                        .foregroundColor(Color.App.textPrimary)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(user.displayName ?? "User")
+                                            .font(DesignTokens.Typography.titleMedium)
+                                            .foregroundColor(Color.App.textPrimary)
 
-                                    Text(user.email ?? "")
-                                        .font(DesignTokens.Typography.bodySmall)
-                                        .foregroundColor(Color.App.textSecondary)
+                                        Text(user.email ?? "")
+                                            .font(DesignTokens.Typography.bodySmall)
+                                            .foregroundColor(Color.App.textSecondary)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(Color.App.textTertiary)
                                 }
                             }
                             .listRowBackground(Color.App.surface)
+                            .accessibilityLabel("View profile for \(user.displayName ?? "User")")
+                            .accessibilityIdentifier(AccessibilityID.userProfile)
                         }
                     }
 
@@ -321,6 +349,10 @@ struct SettingsView: View {
             } message: {
                 Text("Are you sure you want to sign out?")
             }
+            .sheet(isPresented: $showProfile) {
+                ProfileView()
+                    .environmentObject(authViewModel)
+            }
         }
     }
 }
@@ -329,26 +361,33 @@ struct SettingsRow: View {
     let icon: String
     let title: String
     let color: Color
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.md) {
-            Image(systemName: icon)
-                .font(.system(size: DesignTokens.IconSize.sm))
-                .foregroundColor(color)
-                .frame(width: 28, height: 28)
-                .background(color.opacity(0.15))
-                .cornerRadius(6)
+        Button {
+            action?()
+            HapticManager.shared.impact(style: .light)
+        } label: {
+            HStack(spacing: DesignTokens.Spacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: DesignTokens.IconSize.sm))
+                    .foregroundColor(color)
+                    .frame(width: 28, height: 28)
+                    .background(color.opacity(0.15))
+                    .cornerRadius(6)
 
-            Text(title)
-                .font(DesignTokens.Typography.bodyLarge)
-                .foregroundColor(Color.App.textPrimary)
+                Text(title)
+                    .font(DesignTokens.Typography.bodyLarge)
+                    .foregroundColor(Color.App.textPrimary)
 
-            Spacer()
+                Spacer()
 
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Color.App.textTertiary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color.App.textTertiary)
+            }
         }
+        .accessibilityLabel(title)
     }
 }
 

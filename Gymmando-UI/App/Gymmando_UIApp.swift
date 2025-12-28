@@ -38,22 +38,28 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-// MARK: - Root View (Handles Auth State)
+// MARK: - Root View (Handles Auth State & Onboarding)
 struct RootView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         Group {
-            switch authViewModel.authState {
-            case .loading:
-                SplashView()
-            case .unauthenticated:
-                LoginView()
-            case .authenticated:
-                ContentView()
+            if !hasCompletedOnboarding {
+                OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
+            } else {
+                switch authViewModel.authState {
+                case .loading:
+                    SplashView()
+                case .unauthenticated:
+                    LoginView()
+                case .authenticated:
+                    ContentView()
+                }
             }
         }
         .animation(.easeInOut(duration: AppConfig.Animation.standard), value: authViewModel.authState)
+        .animation(.easeInOut(duration: AppConfig.Animation.standard), value: hasCompletedOnboarding)
     }
 }
 

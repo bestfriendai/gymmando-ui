@@ -82,15 +82,19 @@ struct LoginView: View {
                 .frame(width: 100, height: 100)
                 .cornerRadius(DesignTokens.Radius.xl)
                 .shadow(color: Color.App.primary.opacity(0.3), radius: 20)
+                .accessibilityLabel("Gymmando logo")
 
             Text("Gymmando")
                 .font(DesignTokens.Typography.displaySmall)
                 .foregroundColor(Color.App.textPrimary)
+                .accessibilityAddTraits(.isHeader)
 
             Text("Your AI Fitness Coach")
                 .font(DesignTokens.Typography.bodyLarge)
                 .foregroundColor(Color.App.textSecondary)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Gymmando, Your AI Fitness Coach")
     }
 
     // MARK: - Form Section
@@ -101,11 +105,13 @@ struct LoginView: View {
                 Text("Email")
                     .font(DesignTokens.Typography.labelMedium)
                     .foregroundColor(Color.App.textSecondary)
+                    .accessibilityHidden(true)
 
                 HStack {
                     Image(systemName: "envelope.fill")
                         .foregroundColor(Color.App.textTertiary)
                         .frame(width: DesignTokens.IconSize.md)
+                        .accessibilityHidden(true)
 
                     TextField("your@email.com", text: $email)
                         .textContentType(.emailAddress)
@@ -117,6 +123,9 @@ struct LoginView: View {
                         .onSubmit {
                             focusedField = .password
                         }
+                        .accessibilityLabel("Email address")
+                        .accessibilityHint("Enter your email to sign in")
+                        .accessibilityIdentifier(AccessibilityID.emailField)
                 }
                 .padding(DesignTokens.Spacing.md)
                 .background(Color.App.surface)
@@ -162,6 +171,8 @@ struct LoginView: View {
                         Image(systemName: showPassword ? "eye.slash.fill" : "eye.fill")
                             .foregroundColor(Color.App.textTertiary)
                     }
+                    .accessibilityLabel(showPassword ? "Hide password" : "Show password")
+                    .accessibilityHint("Double tap to toggle password visibility")
                 }
                 .padding(DesignTokens.Spacing.md)
                 .background(Color.App.surface)
@@ -184,6 +195,9 @@ struct LoginView: View {
                 }
                 .font(DesignTokens.Typography.labelMedium)
                 .foregroundColor(Color.App.primary)
+                .accessibilityLabel("Forgot password")
+                .accessibilityHint("Double tap to reset your password")
+                .accessibilityIdentifier(AccessibilityID.forgotPasswordButton)
             }
 
             // Error Message
@@ -191,6 +205,7 @@ struct LoginView: View {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(Color.App.error)
+                        .accessibilityHidden(true)
                     Text(errorMessage)
                         .font(DesignTokens.Typography.bodySmall)
                         .foregroundColor(Color.App.error)
@@ -199,6 +214,9 @@ struct LoginView: View {
                 .frame(maxWidth: .infinity)
                 .background(Color.App.error.opacity(0.1))
                 .cornerRadius(DesignTokens.Radius.sm)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Error: \(errorMessage)")
+                .accessibilityAddTraits(.isStaticText)
             }
 
             // Sign In Button
@@ -207,6 +225,9 @@ struct LoginView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(email.isEmpty || password.isEmpty)
+            .accessibilityLabel("Sign in")
+            .accessibilityHint(email.isEmpty || password.isEmpty ? "Enter email and password first" : "Double tap to sign in")
+            .accessibilityIdentifier(AccessibilityID.signInButton)
 
             // Create Account Button
             Button(action: createAccount) {
@@ -214,6 +235,9 @@ struct LoginView: View {
             }
             .buttonStyle(SecondaryButtonStyle())
             .disabled(email.isEmpty || password.isEmpty)
+            .accessibilityLabel("Create account")
+            .accessibilityHint(email.isEmpty || password.isEmpty ? "Enter email and password first" : "Double tap to create a new account")
+            .accessibilityIdentifier(AccessibilityID.createAccountButton)
         }
     }
 
