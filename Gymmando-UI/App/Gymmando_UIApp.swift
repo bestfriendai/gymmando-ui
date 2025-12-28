@@ -7,20 +7,77 @@
 
 import SwiftUI
 import FirebaseCore
+import FirebaseAuth
 import GoogleSignIn
 
 @main
 struct Gymmando_UIApp: App {
-    init() {
-        FirebaseApp.configure()
-    }
-    
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+    @StateObject private var authViewModel = AuthViewModel()
+
     var body: some Scene {
         WindowGroup {
-            LoginView()
+            RootView()
+                .environmentObject(authViewModel)
                 .onOpenURL { url in
                     GIDSignIn.sharedInstance.handle(url)
                 }
+                .preferredColorScheme(.dark)
+        }
+    }
+}
+
+// MARK: - App Delegate
+class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        FirebaseApp.configure()
+        return true
+    }
+}
+
+// MARK: - Root View (Handles Auth State)
+struct RootView: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
+
+    var body: some View {
+        Group {
+            switch authViewModel.authState {
+            case .loading:
+                SplashView()
+            case .unauthenticated:
+                LoginView()
+            case .authenticated:
+                ContentView()
+            }
+        }
+        .animation(.easeInOut(duration: AppConfig.Animation.standard), value: authViewModel.authState)
+    }
+}
+
+// MARK: - Splash View
+struct SplashView: View {
+    var body: some View {
+        ZStack {
+            Color.App.background.ignoresSafeArea()
+
+            VStack(spacing: DesignTokens.Spacing.lg) {
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 120, height: 120)
+                    .cornerRadius(DesignTokens.Radius.xl)
+
+                Text("Gymmando")
+                    .font(DesignTokens.Typography.headlineLarge)
+                    .foregroundColor(Color.App.textPrimary)
+
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: Color.App.primary))
+                    .scaleEffect(1.2)
+            }
         }
     }
 }
