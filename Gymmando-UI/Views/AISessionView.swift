@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import LiveKit
 import Combine
+import os.log
 
 // MARK: - Connection State
 enum ConnectionState: Equatable {
@@ -471,6 +472,7 @@ struct SessionBarView: View {
 final class AudioLevelMonitor {
     private var audioEngine: AVAudioEngine?
     private let onLevelUpdate: (CGFloat) -> Void
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Gymmando", category: "AudioMonitor")
 
     init(onLevelUpdate: @escaping (CGFloat) -> Void) {
         self.onLevelUpdate = onLevelUpdate
@@ -500,7 +502,7 @@ final class AudioLevelMonitor {
             try engine.start()
             self.audioEngine = engine
         } catch {
-            print("Audio engine error: \(error)")
+            logger.error("Audio engine error: \(error.localizedDescription)")
         }
     }
 
