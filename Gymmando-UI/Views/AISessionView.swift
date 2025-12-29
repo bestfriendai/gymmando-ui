@@ -9,10 +9,16 @@ enum ConnectionState: Equatable {
     case disconnected
     case connecting
     case connected
+    case reconnecting
     case error(String)
 
     var isConnected: Bool {
         if case .connected = self { return true }
+        return false
+    }
+
+    var isReconnecting: Bool {
+        if case .reconnecting = self { return true }
         return false
     }
 }
@@ -23,6 +29,16 @@ struct AISessionView: View {
 
     @State private var pulseScale: CGFloat = 1.0
     @State private var showErrorAlert = false
+    @State private var showEndSessionConfirmation = false
+
+    // Connection tips that rotate while connecting
+    private let connectionTips = [
+        "Preparing your AI coach...",
+        "Setting up voice connection...",
+        "Almost ready...",
+        "Tip: Speak clearly for best results"
+    ]
+    @State private var currentTipIndex = 0
 
     var body: some View {
         ZStack {
@@ -30,20 +46,8 @@ struct AISessionView: View {
             Color.App.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Close button
-                HStack {
-                    Spacer()
-                    Button {
-                        Task {
-                            await endSession()
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: DesignTokens.IconSize.lg))
-                            .foregroundColor(Color.App.textTertiary)
-                    }
-                    .padding(DesignTokens.Spacing.lg)
-                }
+                // Top bar with close button and timer
+                topBar
 
                 Spacer()
 
@@ -63,6 +67,7 @@ struct AISessionView: View {
         }
         .onAppear {
             startPulseAnimation()
+            startConnectionTipRotation()
             Task {
                 await startSession()
             }
@@ -88,6 +93,20 @@ struct AISessionView: View {
                 Text("Failed to connect to the AI assistant.")
             }
         }
+        .confirmationDialog(
+            "End Session?",
+            isPresented: $showEndSessionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("End Session", role: .destructive) {
+                Task {
+                    await endSession()
+                }
+            }
+            Button("Continue", role: .cancel) {}
+        } message: {
+            Text("Your session has been running for \(viewModel.formattedDuration).")
+        }
         .onChange(of: viewModel.connectionState) { oldValue, newValue in
             if case .error = newValue {
                 showErrorAlert = true
@@ -96,6 +115,63 @@ struct AISessionView: View {
                 HapticManager.shared.notification(type: .success)
             }
         }
+        .trackScreen("AISession")
+    }
+
+    // MARK: - Top Bar
+    private var topBar: some View {
+        HStack {
+            // Session timer
+            if viewModel.connectionState.isConnected {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Circle()
+                        .fill(Color.App.success)
+                        .frame(width: 8, height: 8)
+
+                    Text(viewModel.formattedDuration)
+                        .font(DesignTokens.Typography.mono)
+                        .foregroundColor(Color.App.textSecondary)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.vertical, DesignTokens.Spacing.sm)
+                .background(Color.App.surface)
+                .cornerRadius(DesignTokens.Radius.full)
+                .accessibilityLabel("Session duration: \(viewModel.formattedDuration)")
+            } else if viewModel.connectionState.isReconnecting {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: Color.App.warning))
+                        .scaleEffect(0.8)
+
+                    Text("Reconnecting...")
+                        .font(DesignTokens.Typography.labelMedium)
+                        .foregroundColor(Color.App.warning)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.vertical, DesignTokens.Spacing.sm)
+                .background(Color.App.warning.opacity(0.1))
+                .cornerRadius(DesignTokens.Radius.full)
+            }
+
+            Spacer()
+
+            // Close button
+            Button {
+                if viewModel.connectionState.isConnected && viewModel.sessionDuration > 10 {
+                    showEndSessionConfirmation = true
+                } else {
+                    Task {
+                        await endSession()
+                    }
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: DesignTokens.IconSize.lg))
+                    .foregroundColor(Color.App.textTertiary)
+            }
+            .accessibilityLabel("Close session")
+        }
+        .padding(DesignTokens.Spacing.lg)
     }
 
     // MARK: - Main Visualization
@@ -159,9 +235,30 @@ struct AISessionView: View {
             Group {
                 switch viewModel.connectionState {
                 case .connecting:
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(2.5)
+                    VStack(spacing: DesignTokens.Spacing.md) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(2.5)
+
+                        Text(connectionTips[currentTipIndex])
+                            .font(DesignTokens.Typography.bodySmall)
+                            .foregroundColor(Color.App.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 200)
+                            .animation(.easeInOut, value: currentTipIndex)
+                    }
+
+                case .reconnecting:
+                    VStack(spacing: DesignTokens.Spacing.md) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: DesignTokens.IconSize.massive))
+                            .foregroundColor(Color.App.warning)
+                            .rotationEffect(.degrees(viewModel.sessionDuration.truncatingRemainder(dividingBy: 1) * 360))
+
+                        Text("Reconnecting...")
+                            .font(DesignTokens.Typography.bodySmall)
+                            .foregroundColor(Color.App.warning)
+                    }
 
                 case .error:
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -169,20 +266,22 @@ struct AISessionView: View {
                         .foregroundColor(Color.App.error)
 
                 case .connected, .disconnected:
-                    Image(systemName: viewModel.connectionState.isConnected ? "mic.fill" : "mic")
+                    Image(systemName: viewModel.isMuted ? "mic.slash.fill" : (viewModel.connectionState.isConnected ? "mic.fill" : "mic"))
                         .font(.system(size: DesignTokens.IconSize.massive))
                         .foregroundStyle(
-                            viewModel.connectionState.isConnected
-                                ? LinearGradient(
-                                    colors: [.white, Color.App.primary],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                                : LinearGradient(
-                                    colors: [.white, .gray],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
+                            viewModel.isMuted
+                                ? LinearGradient(colors: [Color.App.error, Color.App.error.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                                : viewModel.connectionState.isConnected
+                                    ? LinearGradient(
+                                        colors: [.white, Color.App.primary],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                    : LinearGradient(
+                                        colors: [.white, .gray],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
                         )
                         .shadow(
                             color: viewModel.connectionState.isConnected
@@ -205,11 +304,16 @@ struct AISessionView: View {
             case .connecting:
                 statusLabel("CONNECTING...", color: Color.App.textSecondary)
 
+            case .reconnecting:
+                statusLabel("RECONNECTING...", color: Color.App.warning)
+
             case .error:
                 statusLabel("CONNECTION FAILED", color: Color.App.error)
 
             case .connected:
-                if viewModel.remoteAudioLevel > 0.1 {
+                if viewModel.isMuted {
+                    statusLabel("MUTED", color: Color.App.error)
+                } else if viewModel.remoteAudioLevel > 0.1 {
                     statusLabel("GYMMANDO SPEAKING", color: Color.App.secondary)
                 } else if viewModel.localAudioLevel > 0.1 {
                     statusLabel("YOU", color: Color.App.success)
@@ -225,17 +329,44 @@ struct AISessionView: View {
             .font(DesignTokens.Typography.mono)
             .foregroundColor(color)
             .tracking(2)
+            .animation(.easeInOut, value: text)
     }
 
     // MARK: - Bottom Controls
     private var bottomControls: some View {
-        HStack {
-            Spacer()
+        HStack(spacing: DesignTokens.Spacing.xl) {
+            // Mute button
+            if viewModel.connectionState.isConnected {
+                Button {
+                    viewModel.toggleMute()
+                    HapticManager.shared.impact(style: .medium)
+                } label: {
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        Image(systemName: viewModel.isMuted ? "mic.slash.fill" : "mic.fill")
+                            .font(.system(size: DesignTokens.IconSize.lg))
+                            .foregroundColor(viewModel.isMuted ? Color.App.error : Color.App.textPrimary)
+                            .frame(width: 56, height: 56)
+                            .background(viewModel.isMuted ? Color.App.error.opacity(0.2) : Color.App.surface)
+                            .cornerRadius(DesignTokens.Radius.full)
 
+                        Text(viewModel.isMuted ? "Unmute" : "Mute")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+                }
+                .accessibilityLabel(viewModel.isMuted ? "Unmute microphone" : "Mute microphone")
+            }
+
+            // End Session button
             Button {
-                HapticManager.shared.impact(style: .medium)
-                Task {
-                    await endSession()
+                if viewModel.connectionState.isConnected && viewModel.sessionDuration > 10 {
+                    showEndSessionConfirmation = true
+                    HapticManager.shared.impact(style: .medium)
+                } else {
+                    HapticManager.shared.impact(style: .medium)
+                    Task {
+                        await endSession()
+                    }
                 }
             } label: {
                 Text("End Session")
@@ -245,8 +376,29 @@ struct AISessionView: View {
                     .background(Color.App.error)
                     .cornerRadius(DesignTokens.Radius.full)
             }
+            .accessibilityLabel("End session")
 
-            Spacer()
+            // Speaker button
+            if viewModel.connectionState.isConnected {
+                Button {
+                    viewModel.toggleSpeaker()
+                    HapticManager.shared.impact(style: .medium)
+                } label: {
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        Image(systemName: viewModel.isSpeakerOn ? "speaker.wave.3.fill" : "speaker.fill")
+                            .font(.system(size: DesignTokens.IconSize.lg))
+                            .foregroundColor(Color.App.textPrimary)
+                            .frame(width: 56, height: 56)
+                            .background(Color.App.surface)
+                            .cornerRadius(DesignTokens.Radius.full)
+
+                        Text(viewModel.isSpeakerOn ? "Speaker" : "Earpiece")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+                }
+                .accessibilityLabel(viewModel.isSpeakerOn ? "Switch to earpiece" : "Switch to speaker")
+            }
         }
     }
 
@@ -257,6 +409,18 @@ struct AISessionView: View {
             .repeatForever(autoreverses: false)
         ) {
             pulseScale = 1.8
+        }
+    }
+
+    private func startConnectionTipRotation() {
+        Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { timer in
+            if case .connecting = viewModel.connectionState {
+                withAnimation {
+                    currentTipIndex = (currentTipIndex + 1) % connectionTips.count
+                }
+            } else if viewModel.connectionState.isConnected {
+                timer.invalidate()
+            }
         }
     }
 
@@ -276,9 +440,20 @@ final class AISessionViewModel: ObservableObject {
     @Published private(set) var connectionState: ConnectionState = .disconnected
     @Published private(set) var localAudioLevel: CGFloat = 0
     @Published private(set) var remoteAudioLevel: CGFloat = 0
+    @Published private(set) var sessionDuration: TimeInterval = 0
+    @Published private(set) var isMuted = false
+    @Published private(set) var isSpeakerOn = true
+
+    var formattedDuration: String {
+        let minutes = Int(sessionDuration) / 60
+        let seconds = Int(sessionDuration) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
 
     private let liveKitService = LiveKitService()
     private var audioMonitor: AudioLevelMonitor?
+    private var durationTimer: Timer?
+    private var sessionStartTime: Date?
 
     init() {
         setupObservers()
@@ -291,6 +466,17 @@ final class AISessionViewModel: ObservableObject {
             .sink { [weak self] connected in
                 if connected {
                     self?.connectionState = .connected
+                    self?.startDurationTimer()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Observe reconnecting state
+        liveKitService.$isReconnecting
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isReconnecting in
+                if isReconnecting {
+                    self?.connectionState = .reconnecting
                 }
             }
             .store(in: &cancellables)
@@ -339,6 +525,10 @@ final class AISessionViewModel: ObservableObject {
             if liveKitService.connected {
                 connectionState = .connected
                 startAudioMonitoring()
+                startDurationTimer()
+
+                // Track session start
+                AnalyticsService.shared.track(.sessionStarted)
             } else {
                 connectionState = .error("Failed to connect to voice service")
             }
@@ -349,9 +539,51 @@ final class AISessionViewModel: ObservableObject {
     }
 
     func disconnect() async {
+        stopDurationTimer()
         stopAudioMonitoring()
         await liveKitService.disconnect()
         connectionState = .disconnected
+
+        // Track session end with duration
+        AnalyticsService.shared.track(.sessionEnded, parameters: [
+            "duration_seconds": Int(sessionDuration)
+        ])
+        AnalyticsService.shared.trackSessionDuration(Int(sessionDuration))
+    }
+
+    func toggleMute() {
+        isMuted.toggle()
+        // TODO: Actually mute the microphone via LiveKit
+        // liveKitService.setMicrophoneEnabled(!isMuted)
+    }
+
+    func toggleSpeaker() {
+        isSpeakerOn.toggle()
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            if isSpeakerOn {
+                try audioSession.overrideOutputAudioPort(.speaker)
+            } else {
+                try audioSession.overrideOutputAudioPort(.none)
+            }
+        } catch {
+            // Handle error silently
+        }
+    }
+
+    private func startDurationTimer() {
+        sessionStartTime = Date()
+        durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self, let startTime = self.sessionStartTime else { return }
+            Task { @MainActor in
+                self.sessionDuration = Date().timeIntervalSince(startTime)
+            }
+        }
+    }
+
+    private func stopDurationTimer() {
+        durationTimer?.invalidate()
+        durationTimer = nil
     }
 
     private func startAudioMonitoring() {
