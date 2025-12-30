@@ -1401,3 +1401,514 @@ struct BounceButtonStyle: ButtonStyle {
     .padding()
     .background(Color.App.background)
 }
+
+// MARK: - Workout Type Selection
+enum WorkoutType: String, CaseIterable, Identifiable {
+    case general = "General Fitness"
+    case strength = "Strength Training"
+    case cardio = "Cardio"
+    case hiit = "HIIT"
+    case flexibility = "Flexibility"
+    case recovery = "Recovery"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .general: return "figure.run"
+        case .strength: return "figure.strengthtraining.traditional"
+        case .cardio: return "heart.circle.fill"
+        case .hiit: return "bolt.heart.fill"
+        case .flexibility: return "figure.yoga"
+        case .recovery: return "leaf.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .general: return .cyan
+        case .strength: return .orange
+        case .cardio: return .red
+        case .hiit: return .purple
+        case .flexibility: return .green
+        case .recovery: return .mint
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .general: return "Full body workout with mixed exercises"
+        case .strength: return "Build muscle and increase power"
+        case .cardio: return "Improve endurance and heart health"
+        case .hiit: return "High intensity interval training"
+        case .flexibility: return "Stretching and mobility work"
+        case .recovery: return "Light activity and stretching"
+        }
+    }
+}
+
+struct WorkoutTypeSelector: View {
+    @Binding var selectedType: WorkoutType
+    var onSelect: ((WorkoutType) -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            Text("Workout Type")
+                .font(DesignTokens.Typography.titleSmall)
+                .foregroundColor(Color.App.textPrimary)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignTokens.Spacing.sm) {
+                ForEach(WorkoutType.allCases) { type in
+                    WorkoutTypeCard(
+                        type: type,
+                        isSelected: selectedType == type,
+                        onSelect: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                selectedType = type
+                            }
+                            HapticManager.shared.impact(style: .light)
+                            onSelect?(type)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+struct WorkoutTypeCard: View {
+    let type: WorkoutType
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(spacing: DesignTokens.Spacing.sm) {
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? type.color : type.color.opacity(0.15))
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: type.icon)
+                        .font(.system(size: 24))
+                        .foregroundColor(isSelected ? .white : type.color)
+                }
+
+                Text(type.rawValue)
+                    .font(DesignTokens.Typography.labelMedium)
+                    .foregroundColor(isSelected ? Color.App.textPrimary : Color.App.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(DesignTokens.Spacing.md)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: DesignTokens.Radius.lg)
+                    .fill(isSelected ? type.color.opacity(0.15) : Color.App.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignTokens.Radius.lg)
+                    .stroke(isSelected ? type.color : Color.App.border, lineWidth: isSelected ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(type.rawValue)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+// MARK: - Rest Timer
+struct RestTimerView: View {
+    let duration: TimeInterval
+    let onComplete: () -> Void
+    let onSkip: () -> Void
+
+    @State private var remainingTime: TimeInterval
+    @State private var isActive = true
+    @State private var timer: Timer?
+    @State private var showPulse = false
+
+    init(duration: TimeInterval, onComplete: @escaping () -> Void, onSkip: @escaping () -> Void) {
+        self.duration = duration
+        self.onComplete = onComplete
+        self.onSkip = onSkip
+        self._remainingTime = State(initialValue: duration)
+    }
+
+    var body: some View {
+        VStack(spacing: DesignTokens.Spacing.xl) {
+            // Title
+            Text("Rest Time")
+                .font(DesignTokens.Typography.titleLarge)
+                .foregroundColor(Color.App.textPrimary)
+
+            // Timer circle
+            ZStack {
+                // Background circle with pulse
+                if showPulse {
+                    Circle()
+                        .fill(Color.App.primary.opacity(0.1))
+                        .frame(width: 200, height: 200)
+                        .scaleEffect(showPulse ? 1.1 : 1.0)
+                }
+
+                // Progress ring
+                Circle()
+                    .stroke(Color.App.border, lineWidth: 8)
+                    .frame(width: 180, height: 180)
+
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.App.primary, Color.App.secondary],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    )
+                    .frame(width: 180, height: 180)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 1), value: progress)
+
+                // Time display
+                VStack(spacing: DesignTokens.Spacing.xs) {
+                    Text(formattedTime)
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.App.textPrimary)
+                        .contentTransition(.numericText())
+
+                    Text("remaining")
+                        .font(DesignTokens.Typography.labelMedium)
+                        .foregroundColor(Color.App.textSecondary)
+                }
+            }
+
+            // Controls
+            HStack(spacing: DesignTokens.Spacing.lg) {
+                // Add 30s button
+                Button {
+                    remainingTime += 30
+                    HapticManager.shared.impact(style: .light)
+                } label: {
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 32))
+                        Text("+30s")
+                            .font(DesignTokens.Typography.labelSmall)
+                    }
+                    .foregroundColor(Color.App.primary)
+                }
+
+                // Skip button
+                Button {
+                    stopTimer()
+                    onSkip()
+                    HapticManager.shared.impact(style: .medium)
+                } label: {
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        Image(systemName: "forward.fill")
+                            .font(.system(size: 32))
+                        Text("Skip")
+                            .font(DesignTokens.Typography.labelSmall)
+                    }
+                    .foregroundColor(Color.App.textSecondary)
+                }
+            }
+            .padding(.top, DesignTokens.Spacing.md)
+
+            // Motivational text
+            Text(motivationalText)
+                .font(DesignTokens.Typography.bodyMedium)
+                .foregroundColor(Color.App.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, DesignTokens.Spacing.md)
+        }
+        .padding(DesignTokens.Spacing.xl)
+        .onAppear {
+            startTimer()
+            startPulseAnimation()
+        }
+        .onDisappear {
+            stopTimer()
+        }
+    }
+
+    private var progress: CGFloat {
+        guard duration > 0 else { return 0 }
+        return CGFloat(remainingTime / duration)
+    }
+
+    private var formattedTime: String {
+        let minutes = Int(remainingTime) / 60
+        let seconds = Int(remainingTime) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private var motivationalText: String {
+        if remainingTime <= 5 {
+            return "Get ready! 💪"
+        } else if remainingTime <= 15 {
+            return "Almost there..."
+        } else if remainingTime <= 30 {
+            return "Stay focused"
+        } else {
+            return "Breathe and recover"
+        }
+    }
+
+    private func startTimer() {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            if remainingTime > 0 {
+                withAnimation {
+                    remainingTime -= 1
+                }
+
+                // Haptic feedback at certain intervals
+                if remainingTime == 10 || remainingTime == 5 || remainingTime == 3 || remainingTime == 2 || remainingTime == 1 {
+                    HapticManager.shared.impact(style: .light)
+                }
+            } else {
+                stopTimer()
+                HapticManager.shared.notification(type: .success)
+                onComplete()
+            }
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+        isActive = false
+    }
+
+    private func startPulseAnimation() {
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+            showPulse = true
+        }
+    }
+}
+
+// MARK: - Quick Rest Presets
+struct RestPresetSelector: View {
+    let presets: [TimeInterval] = [30, 60, 90, 120]
+    @Binding var selectedDuration: TimeInterval
+    var onSelect: ((TimeInterval) -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text("Rest Duration")
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(Color.App.textSecondary)
+
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                ForEach(presets, id: \.self) { duration in
+                    RestPresetButton(
+                        duration: duration,
+                        isSelected: selectedDuration == duration,
+                        onSelect: {
+                            selectedDuration = duration
+                            HapticManager.shared.impact(style: .light)
+                            onSelect?(duration)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+struct RestPresetButton: View {
+    let duration: TimeInterval
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    private var label: String {
+        let seconds = Int(duration)
+        if seconds < 60 {
+            return "\(seconds)s"
+        } else {
+            let minutes = seconds / 60
+            let remainingSeconds = seconds % 60
+            return remainingSeconds > 0 ? "\(minutes):\(String(format: "%02d", remainingSeconds))" : "\(minutes)m"
+        }
+    }
+
+    var body: some View {
+        Button(action: onSelect) {
+            Text(label)
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(isSelected ? .white : Color.App.textPrimary)
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.vertical, DesignTokens.Spacing.sm)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.App.primary : Color.App.surface)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? Color.clear : Color.App.border, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label) rest")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+// MARK: - Workout Reminder Setup
+struct WorkoutReminderView: View {
+    @Binding var isEnabled: Bool
+    @Binding var reminderTime: Date
+    @Binding var selectedDays: Set<Int>
+    var onSave: (() -> Void)?
+
+    private let weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    var body: some View {
+        VStack(spacing: DesignTokens.Spacing.lg) {
+            // Enable toggle
+            Toggle(isOn: $isEnabled) {
+                HStack(spacing: DesignTokens.Spacing.md) {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Color.App.primary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Workout Reminders")
+                            .font(DesignTokens.Typography.bodyMedium)
+                            .foregroundColor(Color.App.textPrimary)
+
+                        Text("Get notified to stay on track")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+                }
+            }
+            .tint(Color.App.primary)
+            .padding(DesignTokens.Spacing.md)
+            .background(Color.App.surface)
+            .cornerRadius(DesignTokens.Radius.md)
+
+            if isEnabled {
+                // Time picker
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                    Text("Reminder Time")
+                        .font(DesignTokens.Typography.labelMedium)
+                        .foregroundColor(Color.App.textSecondary)
+
+                    DatePicker("", selection: $reminderTime, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .frame(maxHeight: 100)
+                }
+
+                // Day selector
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                    Text("Repeat On")
+                        .font(DesignTokens.Typography.labelMedium)
+                        .foregroundColor(Color.App.textSecondary)
+
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        ForEach(0..<7, id: \.self) { index in
+                            DayToggleButton(
+                                day: weekDays[index],
+                                isSelected: selectedDays.contains(index),
+                                onToggle: {
+                                    if selectedDays.contains(index) {
+                                        selectedDays.remove(index)
+                                    } else {
+                                        selectedDays.insert(index)
+                                    }
+                                    HapticManager.shared.impact(style: .light)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Save button
+                if let onSave = onSave {
+                    Button(action: {
+                        onSave()
+                        HapticManager.shared.notification(type: .success)
+                    }) {
+                        Text("Save Reminder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .padding(.top, DesignTokens.Spacing.md)
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isEnabled)
+    }
+}
+
+struct DayToggleButton: View {
+    let day: String
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            Text(day.prefix(1))
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(isSelected ? .white : Color.App.textSecondary)
+                .frame(width: 40, height: 40)
+                .background(
+                    Circle()
+                        .fill(isSelected ? Color.App.primary : Color.App.surface)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(isSelected ? Color.clear : Color.App.border, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(day), \(isSelected ? "selected" : "not selected")")
+    }
+}
+
+#Preview("Workout Type Selector") {
+    struct PreviewWrapper: View {
+        @State private var selectedType: WorkoutType = .general
+
+        var body: some View {
+            WorkoutTypeSelector(selectedType: $selectedType)
+                .padding()
+                .background(Color.App.background)
+        }
+    }
+    return PreviewWrapper()
+}
+
+#Preview("Rest Timer") {
+    RestTimerView(
+        duration: 60,
+        onComplete: { print("Complete!") },
+        onSkip: { print("Skipped!") }
+    )
+    .background(Color.App.background)
+}
+
+#Preview("Workout Reminder") {
+    struct PreviewWrapper: View {
+        @State private var isEnabled = true
+        @State private var reminderTime = Date()
+        @State private var selectedDays: Set<Int> = [1, 3, 5]
+
+        var body: some View {
+            WorkoutReminderView(
+                isEnabled: $isEnabled,
+                reminderTime: $reminderTime,
+                selectedDays: $selectedDays,
+                onSave: { print("Saved!") }
+            )
+            .padding()
+            .background(Color.App.background)
+        }
+    }
+    return PreviewWrapper()
+}
