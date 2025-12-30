@@ -160,22 +160,31 @@ struct AISessionView: View {
     // MARK: - Top Bar
     private var topBar: some View {
         HStack {
-            // Session timer
+            // Session timer with connection quality
             if viewModel.connectionState.isConnected {
-                HStack(spacing: DesignTokens.Spacing.xs) {
-                    Circle()
-                        .fill(Color.App.success)
-                        .frame(width: 8, height: 8)
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    // Connection quality indicator
+                    ConnectionQualityIndicator(quality: viewModel.connectionQuality, size: 14)
 
-                    Text(viewModel.formattedDuration)
-                        .font(DesignTokens.Typography.mono)
-                        .foregroundColor(Color.App.textSecondary)
+                    Divider()
+                        .frame(height: 16)
+                        .background(Color.App.border)
+
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        Circle()
+                            .fill(Color.App.success)
+                            .frame(width: 8, height: 8)
+
+                        Text(viewModel.formattedDuration)
+                            .font(DesignTokens.Typography.mono)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
                 }
                 .padding(.horizontal, DesignTokens.Spacing.md)
                 .padding(.vertical, DesignTokens.Spacing.sm)
                 .background(Color.App.surface)
                 .cornerRadius(DesignTokens.Radius.full)
-                .accessibilityLabel("Session duration: \(viewModel.formattedDuration)")
+                .accessibilityLabel("Connection \(viewModel.connectionQuality.label). Session duration: \(viewModel.formattedDuration)")
             } else if viewModel.connectionState.isReconnecting {
                 HStack(spacing: DesignTokens.Spacing.xs) {
                     ProgressView()
@@ -736,6 +745,7 @@ final class AISessionViewModel: ObservableObject {
     @Published private(set) var sessionDuration: TimeInterval = 0
     @Published private(set) var isMuted = false
     @Published private(set) var isSpeakerOn = true
+    @Published private(set) var connectionQuality: ConnectionQuality = .good
 
     var formattedDuration: String {
         let minutes = Int(sessionDuration) / 60
@@ -784,6 +794,9 @@ final class AISessionViewModel: ObservableObject {
     }
 
     private var cancellables = Set<AnyCancellable>()
+    private var qualityCheckTimer: Timer?
+    private var lastAudioTimestamp: Date = Date()
+    private var reconnectCount = 0
 
     func connect() async {
         connectionState = .connecting
@@ -819,6 +832,7 @@ final class AISessionViewModel: ObservableObject {
                 connectionState = .connected
                 startAudioMonitoring()
                 startDurationTimer()
+                startQualityMonitoring()
 
                 // Track session start
                 AnalyticsService.shared.track(.sessionStarted)
@@ -834,6 +848,7 @@ final class AISessionViewModel: ObservableObject {
     func disconnect() async {
         stopDurationTimer()
         stopAudioMonitoring()
+        stopQualityMonitoring()
         await liveKitService.disconnect()
         connectionState = .disconnected
 
@@ -890,6 +905,52 @@ final class AISessionViewModel: ObservableObject {
         audioMonitor?.stop()
         audioMonitor = nil
         localAudioLevel = 0
+    }
+
+    private func startQualityMonitoring() {
+        qualityCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateConnectionQuality()
+            }
+        }
+    }
+
+    private func stopQualityMonitoring() {
+        qualityCheckTimer?.invalidate()
+        qualityCheckTimer = nil
+    }
+
+    private func updateConnectionQuality() {
+        // Simulate quality based on various factors
+        // In a real app, this would use actual network metrics from LiveKit
+
+        // Check if we're receiving audio
+        let hasRecentAudio = remoteAudioLevel > 0.05
+
+        // Check reconnection state
+        if connectionState.isReconnecting {
+            connectionQuality = .poor
+            reconnectCount += 1
+            return
+        }
+
+        // Reset reconnect count if stable
+        if connectionState.isConnected && !connectionState.isReconnecting {
+            if reconnectCount > 0 {
+                reconnectCount = max(0, reconnectCount - 1)
+            }
+        }
+
+        // Determine quality based on factors
+        if reconnectCount >= 3 {
+            connectionQuality = .poor
+        } else if reconnectCount >= 1 {
+            connectionQuality = .fair
+        } else if hasRecentAudio || localAudioLevel > 0.1 {
+            connectionQuality = .excellent
+        } else {
+            connectionQuality = .good
+        }
     }
 }
 

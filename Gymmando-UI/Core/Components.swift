@@ -742,6 +742,594 @@ struct RefreshableScrollView<Content: View>: View {
     }
 }
 
+// MARK: - Keyboard Toolbar
+struct KeyboardToolbar: ViewModifier {
+    @FocusState.Binding var isFocused: Bool
+    var doneAction: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+
+                    Button {
+                        HapticManager.shared.impact(style: .light)
+                        isFocused = false
+                        doneAction?()
+                    } label: {
+                        Text("Done")
+                            .font(DesignTokens.Typography.labelLarge)
+                            .foregroundColor(Color.App.primary)
+                    }
+                }
+            }
+    }
+}
+
+extension View {
+    func keyboardToolbar(isFocused: FocusState<Bool>.Binding, doneAction: (() -> Void)? = nil) -> some View {
+        modifier(KeyboardToolbar(isFocused: isFocused, doneAction: doneAction))
+    }
+}
+
+// MARK: - Session Rating View
+struct SessionRatingView: View {
+    let onRatingSubmit: (Int, String?) -> Void
+    let onDismiss: () -> Void
+
+    @State private var selectedRating: Int = 0
+    @State private var feedbackText = ""
+    @State private var showFeedbackField = false
+    @State private var isAnimating = false
+    @FocusState private var isFeedbackFocused: Bool
+
+    private let ratingEmojis = ["", "😫", "😕", "😐", "🙂", "🤩"]
+    private let ratingLabels = ["", "Poor", "Fair", "Okay", "Good", "Amazing!"]
+
+    var body: some View {
+        VStack(spacing: DesignTokens.Spacing.xl) {
+            // Header
+            VStack(spacing: DesignTokens.Spacing.sm) {
+                Text("How was your session?")
+                    .font(DesignTokens.Typography.headlineSmall)
+                    .foregroundColor(Color.App.textPrimary)
+
+                Text("Your feedback helps us improve")
+                    .font(DesignTokens.Typography.bodySmall)
+                    .foregroundColor(Color.App.textSecondary)
+            }
+
+            // Rating stars
+            HStack(spacing: DesignTokens.Spacing.md) {
+                ForEach(1...5, id: \.self) { star in
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            selectedRating = star
+                            showFeedbackField = star <= 3
+                        }
+                        HapticManager.shared.impact(style: .light)
+                    } label: {
+                        Image(systemName: star <= selectedRating ? "star.fill" : "star")
+                            .font(.system(size: 36))
+                            .foregroundColor(star <= selectedRating ? .yellow : Color.App.textTertiary)
+                            .scaleEffect(star == selectedRating && isAnimating ? 1.2 : 1.0)
+                    }
+                    .accessibilityLabel("\(star) star\(star > 1 ? "s" : "")")
+                    .accessibilityAddTraits(star == selectedRating ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, DesignTokens.Spacing.md)
+
+            // Emoji and label for selected rating
+            if selectedRating > 0 {
+                VStack(spacing: DesignTokens.Spacing.xs) {
+                    Text(ratingEmojis[selectedRating])
+                        .font(.system(size: 48))
+
+                    Text(ratingLabels[selectedRating])
+                        .font(DesignTokens.Typography.titleMedium)
+                        .foregroundColor(Color.App.primary)
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            // Optional feedback field (shown for lower ratings)
+            if showFeedbackField {
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    Text("What could be better?")
+                        .font(DesignTokens.Typography.labelMedium)
+                        .foregroundColor(Color.App.textSecondary)
+
+                    TextField("Your feedback (optional)", text: $feedbackText, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(DesignTokens.Typography.bodyMedium)
+                        .foregroundColor(Color.App.textPrimary)
+                        .padding(DesignTokens.Spacing.md)
+                        .background(Color.App.surface)
+                        .cornerRadius(DesignTokens.Radius.md)
+                        .focused($isFeedbackFocused)
+                        .lineLimit(3...6)
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            Spacer()
+
+            // Submit button
+            VStack(spacing: DesignTokens.Spacing.md) {
+                Button {
+                    HapticManager.shared.impact(style: .medium)
+                    onRatingSubmit(selectedRating, feedbackText.isEmpty ? nil : feedbackText)
+                } label: {
+                    Text("Submit")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(selectedRating == 0)
+
+                Button {
+                    onDismiss()
+                } label: {
+                    Text("Skip")
+                        .font(DesignTokens.Typography.bodyMedium)
+                        .foregroundColor(Color.App.textSecondary)
+                }
+            }
+        }
+        .padding(DesignTokens.Spacing.xl)
+        .onChange(of: selectedRating) { _, _ in
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.5)) {
+                isAnimating = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isAnimating = false
+            }
+        }
+    }
+}
+
+// MARK: - Connection Quality Indicator
+enum ConnectionQuality {
+    case excellent
+    case good
+    case fair
+    case poor
+    case disconnected
+
+    var icon: String {
+        switch self {
+        case .excellent: return "wifi"
+        case .good: return "wifi"
+        case .fair: return "wifi.exclamationmark"
+        case .poor: return "wifi.exclamationmark"
+        case .disconnected: return "wifi.slash"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .excellent: return Color.App.success
+        case .good: return Color.App.success.opacity(0.8)
+        case .fair: return Color.App.warning
+        case .poor: return Color.App.error.opacity(0.8)
+        case .disconnected: return Color.App.error
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .excellent: return "Excellent"
+        case .good: return "Good"
+        case .fair: return "Fair"
+        case .poor: return "Poor"
+        case .disconnected: return "Disconnected"
+        }
+    }
+
+    var bars: Int {
+        switch self {
+        case .excellent: return 4
+        case .good: return 3
+        case .fair: return 2
+        case .poor: return 1
+        case .disconnected: return 0
+        }
+    }
+}
+
+struct ConnectionQualityIndicator: View {
+    let quality: ConnectionQuality
+    var showLabel: Bool = false
+    var size: CGFloat = 16
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            // Signal bars
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<4, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(index < quality.bars ? quality.color : Color.App.textTertiary.opacity(0.3))
+                        .frame(width: size / 4, height: CGFloat(index + 1) * (size / 4))
+                }
+            }
+            .frame(width: size, height: size)
+
+            if showLabel {
+                Text(quality.label)
+                    .font(DesignTokens.Typography.labelSmall)
+                    .foregroundColor(quality.color)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Connection quality: \(quality.label)")
+    }
+}
+
+// MARK: - Daily Goal Progress Widget
+struct DailyGoalProgressWidget: View {
+    let currentSessions: Int
+    let goalSessions: Int
+    let currentMinutes: Int
+    let goalMinutes: Int
+    var onTap: (() -> Void)?
+
+    @State private var animatedSessionProgress: CGFloat = 0
+    @State private var animatedMinuteProgress: CGFloat = 0
+
+    private var sessionProgress: CGFloat {
+        guard goalSessions > 0 else { return 0 }
+        return min(CGFloat(currentSessions) / CGFloat(goalSessions), 1.0)
+    }
+
+    private var minuteProgress: CGFloat {
+        guard goalMinutes > 0 else { return 0 }
+        return min(CGFloat(currentMinutes) / CGFloat(goalMinutes), 1.0)
+    }
+
+    var body: some View {
+        Button(action: { onTap?() }) {
+            VStack(spacing: DesignTokens.Spacing.md) {
+                // Header
+                HStack {
+                    Text("Today's Progress")
+                        .font(DesignTokens.Typography.titleSmall)
+                        .foregroundColor(Color.App.textPrimary)
+
+                    Spacer()
+
+                    if sessionProgress >= 1.0 {
+                        Label("Complete!", systemImage: "checkmark.circle.fill")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.success)
+                    }
+                }
+
+                HStack(spacing: DesignTokens.Spacing.lg) {
+                    // Sessions ring
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.App.border, lineWidth: 6)
+                                .frame(width: 60, height: 60)
+
+                            Circle()
+                                .trim(from: 0, to: animatedSessionProgress)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [Color.App.primary, Color.App.secondary],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                                )
+                                .frame(width: 60, height: 60)
+                                .rotationEffect(.degrees(-90))
+
+                            VStack(spacing: 0) {
+                                Text("\(currentSessions)")
+                                    .font(DesignTokens.Typography.titleMedium)
+                                    .foregroundColor(Color.App.textPrimary)
+                                Text("/\(goalSessions)")
+                                    .font(DesignTokens.Typography.labelSmall)
+                                    .foregroundColor(Color.App.textTertiary)
+                            }
+                        }
+
+                        Text("Sessions")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+
+                    // Minutes ring
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.App.border, lineWidth: 6)
+                                .frame(width: 60, height: 60)
+
+                            Circle()
+                                .trim(from: 0, to: animatedMinuteProgress)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.cyan, .blue],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                                )
+                                .frame(width: 60, height: 60)
+                                .rotationEffect(.degrees(-90))
+
+                            VStack(spacing: 0) {
+                                Text("\(currentMinutes)")
+                                    .font(DesignTokens.Typography.titleMedium)
+                                    .foregroundColor(Color.App.textPrimary)
+                                Text("/\(goalMinutes)m")
+                                    .font(DesignTokens.Typography.labelSmall)
+                                    .foregroundColor(Color.App.textTertiary)
+                            }
+                        }
+
+                        Text("Minutes")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+
+                    Spacer()
+
+                    // Streak indicator
+                    VStack(spacing: DesignTokens.Spacing.xs) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.App.primary.opacity(0.15))
+                                .frame(width: 60, height: 60)
+
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 28))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.yellow, .orange, .red],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+
+                        Text("Streak")
+                            .font(DesignTokens.Typography.labelSmall)
+                            .foregroundColor(Color.App.textSecondary)
+                    }
+                }
+            }
+            .padding(DesignTokens.Spacing.lg)
+            .background(Color.App.surface)
+            .cornerRadius(DesignTokens.Radius.lg)
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignTokens.Radius.lg)
+                    .stroke(Color.App.border, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1).delay(0.2)) {
+                animatedSessionProgress = sessionProgress
+                animatedMinuteProgress = minuteProgress
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Today's progress: \(currentSessions) of \(goalSessions) sessions, \(currentMinutes) of \(goalMinutes) minutes")
+    }
+}
+
+// MARK: - Swipe Action Modifier
+struct SwipeAction<Content: View>: ViewModifier {
+    let leadingActions: [SwipeActionItem]
+    let trailingActions: [SwipeActionItem]
+    let content: () -> Content
+
+    @State private var offset: CGFloat = 0
+    @State private var previousOffset: CGFloat = 0
+
+    private let actionWidth: CGFloat = 80
+
+    func body(content: Content) -> some View {
+        ZStack {
+            // Leading actions background
+            HStack(spacing: 0) {
+                ForEach(leadingActions) { action in
+                    Button(action: action.action) {
+                        VStack(spacing: 4) {
+                            Image(systemName: action.icon)
+                                .font(.system(size: 20))
+                            if let title = action.title {
+                                Text(title)
+                                    .font(.caption2)
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .frame(width: actionWidth)
+                        .frame(maxHeight: .infinity)
+                        .background(action.color)
+                    }
+                }
+                Spacer()
+            }
+
+            // Trailing actions background
+            HStack(spacing: 0) {
+                Spacer()
+                ForEach(trailingActions.reversed()) { action in
+                    Button(action: action.action) {
+                        VStack(spacing: 4) {
+                            Image(systemName: action.icon)
+                                .font(.system(size: 20))
+                            if let title = action.title {
+                                Text(title)
+                                    .font(.caption2)
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .frame(width: actionWidth)
+                        .frame(maxHeight: .infinity)
+                        .background(action.color)
+                    }
+                }
+            }
+
+            // Main content
+            content
+                .offset(x: offset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            let newOffset = previousOffset + value.translation.width
+                            let maxLeading = CGFloat(leadingActions.count) * actionWidth
+                            let maxTrailing = -CGFloat(trailingActions.count) * actionWidth
+
+                            offset = min(maxLeading, max(maxTrailing, newOffset))
+                        }
+                        .onEnded { value in
+                            let snapThreshold: CGFloat = 40
+                            let maxLeading = CGFloat(leadingActions.count) * actionWidth
+                            let maxTrailing = -CGFloat(trailingActions.count) * actionWidth
+
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                if offset > snapThreshold && !leadingActions.isEmpty {
+                                    offset = maxLeading
+                                } else if offset < -snapThreshold && !trailingActions.isEmpty {
+                                    offset = maxTrailing
+                                } else {
+                                    offset = 0
+                                }
+                            }
+                            previousOffset = offset
+                            HapticManager.shared.impact(style: .light)
+                        }
+                )
+        }
+        .clipped()
+    }
+}
+
+struct SwipeActionItem: Identifiable {
+    let id = UUID()
+    let icon: String
+    let title: String?
+    let color: Color
+    let action: () -> Void
+
+    init(icon: String, title: String? = nil, color: Color, action: @escaping () -> Void) {
+        self.icon = icon
+        self.title = title
+        self.color = color
+        self.action = action
+    }
+}
+
+extension View {
+    func swipeActions(
+        leading: [SwipeActionItem] = [],
+        trailing: [SwipeActionItem] = []
+    ) -> some View {
+        modifier(SwipeAction(leadingActions: leading, trailingActions: trailing, content: { self }))
+    }
+}
+
+// MARK: - Animated Counter
+struct AnimatedCounter: View {
+    let value: Int
+    var font: Font = DesignTokens.Typography.headlineLarge
+    var color: Color = Color.App.textPrimary
+
+    @State private var animatedValue: Int = 0
+
+    var body: some View {
+        Text("\(animatedValue)")
+            .font(font)
+            .foregroundColor(color)
+            .contentTransition(.numericText())
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.8)) {
+                    animatedValue = value
+                }
+            }
+            .onChange(of: value) { _, newValue in
+                withAnimation(.easeOut(duration: 0.5)) {
+                    animatedValue = newValue
+                }
+            }
+    }
+}
+
+// MARK: - Tip Card
+struct TipCard: View {
+    let tip: String
+    let icon: String
+    var color: Color = Color.App.primary
+    var onDismiss: (() -> Void)?
+
+    @State private var isVisible = true
+
+    var body: some View {
+        if isVisible {
+            HStack(spacing: DesignTokens.Spacing.md) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(color)
+                    .frame(width: 32)
+
+                Text(tip)
+                    .font(DesignTokens.Typography.bodySmall)
+                    .foregroundColor(Color.App.textPrimary)
+                    .lineLimit(2)
+
+                Spacer()
+
+                if onDismiss != nil {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            isVisible = false
+                        }
+                        onDismiss?()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(Color.App.textTertiary)
+                    }
+                }
+            }
+            .padding(DesignTokens.Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: DesignTokens.Radius.md)
+                    .fill(color.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DesignTokens.Radius.md)
+                            .stroke(color.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            .transition(.asymmetric(
+                insertion: .opacity.combined(with: .move(edge: .top)),
+                removal: .opacity.combined(with: .scale(scale: 0.95))
+            ))
+        }
+    }
+}
+
+// MARK: - Bounce Effect Button Style
+struct BounceButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.5), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                if isPressed {
+                    HapticManager.shared.impact(style: .soft)
+                }
+            }
+    }
+}
+
 // MARK: - Previews
 #Preview("Empty State") {
     EmptyStateView(
@@ -779,5 +1367,37 @@ struct RefreshableScrollView<Content: View>: View {
         actionTitle: "Continue",
         action: {}
     )
+    .background(Color.App.background)
+}
+
+#Preview("Session Rating") {
+    SessionRatingView(
+        onRatingSubmit: { rating, feedback in
+            print("Rating: \(rating), Feedback: \(feedback ?? "none")")
+        },
+        onDismiss: {}
+    )
+    .background(Color.App.background)
+}
+
+#Preview("Connection Quality") {
+    VStack(spacing: 20) {
+        ForEach([ConnectionQuality.excellent, .good, .fair, .poor, .disconnected], id: \.label) { quality in
+            ConnectionQualityIndicator(quality: quality, showLabel: true)
+        }
+    }
+    .padding()
+    .background(Color.App.background)
+}
+
+#Preview("Daily Goal Progress") {
+    DailyGoalProgressWidget(
+        currentSessions: 2,
+        goalSessions: 3,
+        currentMinutes: 45,
+        goalMinutes: 60,
+        onTap: {}
+    )
+    .padding()
     .background(Color.App.background)
 }

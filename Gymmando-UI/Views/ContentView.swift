@@ -6,6 +6,13 @@ struct ContentView: View {
     @StateObject private var networkMonitor = NetworkMonitor.shared
     @AppStorage("hasCompletedFirstSession") private var hasCompletedFirstSession = false
     @AppStorage("totalSessionCount") private var totalSessionCount = 0
+    @AppStorage("totalMinutes") private var totalMinutes = 0
+    @AppStorage("currentStreak") private var currentStreak = 0
+    @AppStorage("todaySessions") private var todaySessions = 0
+    @AppStorage("todayMinutes") private var todayMinutes = 0
+    @AppStorage("lastSessionDate") private var lastSessionDate: Double = 0
+    @AppStorage("weeklySessionGoal") private var weeklySessionGoal = 3
+    @AppStorage("dailyMinutesGoal") private var dailyMinutesGoal = 20
     @State private var showAISession = false
     @State private var showSettings = false
     @State private var showMicrophonePermissionPrompt = false
@@ -13,6 +20,8 @@ struct ContentView: View {
     @State private var showGoals = false
     @State private var showHistory = false
     @State private var currentTip = 0
+    @State private var sessionDuration: TimeInterval = 0
+    @State private var showSessionRating = false
 
     // Motivational tips that rotate
     private let tips = [
@@ -72,6 +81,17 @@ struct ContentView: View {
                             // First-time user coaching card
                             if !hasCompletedFirstSession {
                                 firstTimeUserCard
+                            } else {
+                                // Daily progress widget for returning users
+                                DailyGoalProgressWidget(
+                                    currentSessions: todaySessions,
+                                    goalSessions: max(1, weeklySessionGoal / 7 + 1),
+                                    currentMinutes: todayMinutes,
+                                    goalMinutes: dailyMinutesGoal
+                                ) {
+                                    showGoals = true
+                                    HapticManager.shared.impact(style: .light)
+                                }
                             }
 
                             // Motivational tip card
@@ -124,7 +144,20 @@ struct ContentView: View {
                             hasCompletedFirstSession = true
                         }
                         totalSessionCount += 1
+
+                        // Update daily stats and streak
+                        updateSessionStats()
+
+                        // Show rating for sessions > 30 seconds
+                        if sessionDuration > 30 {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                showSessionRating = true
+                            }
+                        }
                     }
+            }
+            .sheet(isPresented: $showSessionRating) {
+                SessionRatingSheet()
             }
             .sheet(isPresented: $showWorkoutTips) {
                 WorkoutTipsView()
@@ -372,9 +405,9 @@ struct ContentView: View {
             }
 
             HStack(spacing: DesignTokens.Spacing.md) {
-                StatCard(title: "Sessions", value: "0", icon: "waveform", trend: nil)
-                StatCard(title: "Minutes", value: "0", icon: "clock.fill", trend: nil)
-                StatCard(title: "Streak", value: "0", icon: "flame.fill", trend: nil)
+                StatCard(title: "Sessions", value: "\(totalSessionCount)", icon: "waveform", trend: todaySessions > 0 ? "+\(todaySessions)" : nil)
+                StatCard(title: "Minutes", value: "\(totalMinutes)", icon: "clock.fill", trend: todayMinutes > 0 ? "+\(todayMinutes)" : nil)
+                StatCard(title: "Streak", value: "\(currentStreak)", icon: "flame.fill", trend: currentStreak > 0 ? "days" : nil)
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AccessibilityID.statsSection)
@@ -404,6 +437,113 @@ struct ContentView: View {
                 currentTip = (currentTip + 1) % tips.count
             }
         }
+    }
+
+    private func updateSessionStats() {
+        let today = Calendar.current.startOfDay(for: Date())
+        let lastSession = Date(timeIntervalSince1970: lastSessionDate)
+        let lastSessionDay = Calendar.current.startOfDay(for: lastSession)
+
+        // Check if this is a new day
+        if today != lastSessionDay {
+            // Reset daily stats
+            todaySessions = 1
+            todayMinutes = Int(sessionDuration / 60)
+
+            // Update streak
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+            if lastSessionDay == yesterday {
+                // Consecutive day - increment streak
+                currentStreak += 1
+            } else if lastSessionDay < yesterday {
+                // Streak broken - reset to 1
+                currentStreak = 1
+            }
+            // If lastSessionDay == today (shouldn't happen here), keep streak
+        } else {
+            // Same day - increment daily stats
+            todaySessions += 1
+            todayMinutes += Int(sessionDuration / 60)
+        }
+
+        // Update total minutes
+        totalMinutes += Int(sessionDuration / 60)
+
+        // Update last session date
+        lastSessionDate = Date().timeIntervalSince1970
+    }
+
+    private func checkAndResetDailyStats() {
+        let today = Calendar.current.startOfDay(for: Date())
+        let lastSession = Date(timeIntervalSince1970: lastSessionDate)
+        let lastSessionDay = Calendar.current.startOfDay(for: lastSession)
+
+        if today != lastSessionDay && lastSessionDate > 0 {
+            // New day - reset daily counters
+            todaySessions = 0
+            todayMinutes = 0
+
+            // Check if streak should be reset
+            let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+            if lastSessionDay < yesterday {
+                currentStreak = 0
+            }
+        }
+    }
+}
+
+// MARK: - Session Rating Sheet
+struct SessionRatingSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var hasSubmitted = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.App.background.ignoresSafeArea()
+
+                if hasSubmitted {
+                    SuccessStateView(
+                        title: "Thanks for your feedback!",
+                        message: "Your input helps us improve your experience.",
+                        actionTitle: "Done",
+                        action: { dismiss() }
+                    )
+                } else {
+                    SessionRatingView(
+                        onRatingSubmit: { rating, feedback in
+                            // In a real app, send this to analytics/backend
+                            AnalyticsService.shared.track(.sessionRated, parameters: [
+                                "rating": rating,
+                                "has_feedback": feedback != nil
+                            ])
+
+                            withAnimation {
+                                hasSubmitted = true
+                            }
+
+                            // Auto-dismiss after showing success
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                dismiss()
+                            }
+                        },
+                        onDismiss: { dismiss() }
+                    )
+                }
+            }
+            .navigationTitle("Rate Session")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Skip") {
+                        dismiss()
+                    }
+                    .foregroundColor(Color.App.textSecondary)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 
