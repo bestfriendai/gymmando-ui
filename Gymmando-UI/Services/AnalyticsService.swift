@@ -20,6 +20,7 @@ enum AnalyticsEvent: String {
     case sessionStarted = "session_started"
     case sessionEnded = "session_ended"
     case sessionDuration = "session_duration"
+    case sessionRated = "session_rated"
     case connectionFailed = "connection_failed"
     case connectionRetried = "connection_retried"
 
