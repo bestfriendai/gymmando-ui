@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseAuth
+import PhotosUI
 
 struct ProfileView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -40,6 +41,9 @@ struct ProfileView: View {
                     }
                     .foregroundColor(Color.App.primary)
                 }
+            }
+            .sheet(isPresented: $showEditProfile) {
+                EditProfileSheet(user: authViewModel.currentUser)
             }
             .trackScreen("Profile")
         }
@@ -166,19 +170,46 @@ struct ProfileView: View {
                 .foregroundColor(Color.App.primary)
             }
 
-            // Empty state
+            // Empty state with CTA
             VStack(spacing: DesignTokens.Spacing.md) {
-                Image(systemName: "trophy")
-                    .font(.system(size: 40))
-                    .foregroundColor(Color.App.textTertiary)
+                ZStack {
+                    Circle()
+                        .fill(Color.App.primary.opacity(0.1))
+                        .frame(width: 80, height: 80)
 
-                Text("No achievements yet")
-                    .font(DesignTokens.Typography.bodyMedium)
-                    .foregroundColor(Color.App.textSecondary)
+                    Image(systemName: "trophy.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.yellow, .orange],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                }
 
-                Text("Complete sessions to unlock achievements")
+                Text("Unlock Your First Badge")
+                    .font(DesignTokens.Typography.titleSmall)
+                    .foregroundColor(Color.App.textPrimary)
+
+                Text("Complete your first coaching session to earn the \"Getting Started\" achievement")
                     .font(DesignTokens.Typography.bodySmall)
-                    .foregroundColor(Color.App.textTertiary)
+                    .foregroundColor(Color.App.textSecondary)
+                    .multilineTextAlignment(.center)
+
+                Button {
+                    dismiss()
+                    HapticManager.shared.impact(style: .medium)
+                } label: {
+                    Text("Start First Session")
+                        .font(DesignTokens.Typography.labelMedium)
+                        .foregroundColor(Color.App.primary)
+                        .padding(.horizontal, DesignTokens.Spacing.md)
+                        .padding(.vertical, DesignTokens.Spacing.sm)
+                        .background(Color.App.primary.opacity(0.15))
+                        .cornerRadius(DesignTokens.Radius.full)
+                }
+                .accessibilityLabel("Start your first coaching session")
             }
             .frame(maxWidth: .infinity)
             .padding(DesignTokens.Spacing.xl)
@@ -205,24 +236,228 @@ struct ProfileView: View {
                 .foregroundColor(Color.App.primary)
             }
 
-            // Empty state
+            // Empty state with illustration
             VStack(spacing: DesignTokens.Spacing.md) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 40))
-                    .foregroundColor(Color.App.textTertiary)
+                ZStack {
+                    Circle()
+                        .fill(Color.App.secondary.opacity(0.1))
+                        .frame(width: 80, height: 80)
 
-                Text("No sessions yet")
-                    .font(DesignTokens.Typography.bodyMedium)
-                    .foregroundColor(Color.App.textSecondary)
+                    Image(systemName: "waveform.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.cyan, .blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
 
-                Text("Start your first AI coaching session")
+                Text("Your Journey Begins Here")
+                    .font(DesignTokens.Typography.titleSmall)
+                    .foregroundColor(Color.App.textPrimary)
+
+                Text("Your workout history will appear here after your first session with your AI coach")
                     .font(DesignTokens.Typography.bodySmall)
-                    .foregroundColor(Color.App.textTertiary)
+                    .foregroundColor(Color.App.textSecondary)
+                    .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
             .padding(DesignTokens.Spacing.xl)
             .background(Color.App.surface)
             .cornerRadius(DesignTokens.Radius.lg)
+        }
+    }
+}
+
+// MARK: - Edit Profile Sheet
+struct EditProfileSheet: View {
+    let user: AppUser?
+    @Environment(\.dismiss) private var dismiss
+    @State private var displayName: String = ""
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var profileImage: Image?
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.App.background.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: DesignTokens.Spacing.xl) {
+                        // Photo Picker
+                        photoSection
+
+                        // Name Field
+                        nameSection
+
+                        // Info Section
+                        infoSection
+
+                        Spacer(minLength: DesignTokens.Spacing.xl)
+                    }
+                    .screenPadding()
+                    .padding(.top, DesignTokens.Spacing.lg)
+                }
+            }
+            .navigationTitle("Edit Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundColor(Color.App.textSecondary)
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        saveProfile()
+                    }
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color.App.primary)
+                    .disabled(isSaving)
+                }
+            }
+            .onAppear {
+                displayName = user?.displayName ?? ""
+            }
+        }
+    }
+
+    // MARK: - Photo Section
+    private var photoSection: some View {
+        VStack(spacing: DesignTokens.Spacing.md) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                ZStack {
+                    if let profileImage {
+                        profileImage
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 100, height: 100)
+                            .clipShape(Circle())
+                    } else {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.App.primary, Color.App.secondary],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 100, height: 100)
+
+                        if let user = user {
+                            Text(String(user.firstName.prefix(1)).uppercased())
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        } else {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.white)
+                        }
+                    }
+
+                    // Camera badge
+                    Circle()
+                        .fill(Color.App.primary)
+                        .frame(width: 32, height: 32)
+                        .overlay(
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(.white)
+                        )
+                        .offset(x: 35, y: 35)
+                }
+            }
+            .onChange(of: selectedPhoto) { _, newValue in
+                loadPhoto(from: newValue)
+            }
+
+            Text("Change Photo")
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(Color.App.primary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Profile photo. Tap to change")
+    }
+
+    // MARK: - Name Section
+    private var nameSection: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            Text("Display Name")
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(Color.App.textSecondary)
+
+            TextField("Your name", text: $displayName)
+                .font(DesignTokens.Typography.bodyLarge)
+                .foregroundColor(Color.App.textPrimary)
+                .padding(DesignTokens.Spacing.md)
+                .background(Color.App.surface)
+                .cornerRadius(DesignTokens.Radius.md)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DesignTokens.Radius.md)
+                        .stroke(Color.App.border, lineWidth: 1)
+                )
+                .accessibilityLabel("Display name")
+        }
+    }
+
+    // MARK: - Info Section
+    private var infoSection: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text("Email")
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(Color.App.textSecondary)
+
+            HStack {
+                Image(systemName: "envelope.fill")
+                    .foregroundColor(Color.App.textTertiary)
+
+                Text(user?.email ?? "No email")
+                    .font(DesignTokens.Typography.bodyMedium)
+                    .foregroundColor(Color.App.textSecondary)
+
+                Spacer()
+
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color.App.textTertiary)
+            }
+            .padding(DesignTokens.Spacing.md)
+            .background(Color.App.surface.opacity(0.5))
+            .cornerRadius(DesignTokens.Radius.md)
+
+            Text("Email cannot be changed")
+                .font(DesignTokens.Typography.labelSmall)
+                .foregroundColor(Color.App.textTertiary)
+        }
+    }
+
+    // MARK: - Actions
+    private func loadPhoto(from item: PhotosPickerItem?) {
+        Task {
+            if let data = try? await item?.loadTransferable(type: Data.self),
+               let uiImage = UIImage(data: data) {
+                profileImage = Image(uiImage: uiImage)
+                HapticManager.shared.notification(type: .success)
+            }
+        }
+    }
+
+    private func saveProfile() {
+        isSaving = true
+        HapticManager.shared.impact(style: .medium)
+
+        // TODO: Implement profile update with Firebase
+        // Auth.auth().currentUser?.createProfileChangeRequest()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isSaving = false
+            HapticManager.shared.notification(type: .success)
+            dismiss()
         }
     }
 }
