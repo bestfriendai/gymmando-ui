@@ -4,9 +4,14 @@ import FirebaseAuth
 struct ContentView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var networkMonitor = NetworkMonitor.shared
+    @AppStorage("hasCompletedFirstSession") private var hasCompletedFirstSession = false
+    @AppStorage("totalSessionCount") private var totalSessionCount = 0
     @State private var showAISession = false
     @State private var showSettings = false
     @State private var showMicrophonePermissionPrompt = false
+    @State private var showWorkoutTips = false
+    @State private var showGoals = false
+    @State private var showHistory = false
     @State private var currentTip = 0
 
     // Motivational tips that rotate
@@ -64,6 +69,11 @@ struct ContentView: View {
                             headerSection
                                 .padding(.top, DesignTokens.Spacing.lg)
 
+                            // First-time user coaching card
+                            if !hasCompletedFirstSession {
+                                firstTimeUserCard
+                            }
+
                             // Motivational tip card
                             tipCard
 
@@ -108,6 +118,22 @@ struct ContentView: View {
             }
             .fullScreenCover(isPresented: $showAISession) {
                 AISessionView()
+                    .onDisappear {
+                        // Track session completion
+                        if !hasCompletedFirstSession {
+                            hasCompletedFirstSession = true
+                        }
+                        totalSessionCount += 1
+                    }
+            }
+            .sheet(isPresented: $showWorkoutTips) {
+                WorkoutTipsView()
+            }
+            .sheet(isPresented: $showGoals) {
+                GoalsView()
+            }
+            .sheet(isPresented: $showHistory) {
+                SessionHistoryView()
             }
             .onAppear {
                 // Rotate tips periodically
@@ -115,6 +141,75 @@ struct ContentView: View {
             }
             .trackScreen("Home")
         }
+    }
+
+    // MARK: - First Time User Card
+    private var firstTimeUserCard: some View {
+        VStack(spacing: DesignTokens.Spacing.md) {
+            HStack(spacing: DesignTokens.Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.App.primary, Color.App.secondary],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Welcome to Gymmando!")
+                        .font(DesignTokens.Typography.titleSmall)
+                        .foregroundColor(Color.App.textPrimary)
+
+                    Text("Start your first AI coaching session")
+                        .font(DesignTokens.Typography.bodySmall)
+                        .foregroundColor(Color.App.textSecondary)
+                }
+
+                Spacer()
+            }
+
+            // Steps to get started
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                OnboardingStep(number: 1, text: "Tap the microphone to start", isCompleted: false)
+                OnboardingStep(number: 2, text: "Talk naturally with your AI coach", isCompleted: false)
+                OnboardingStep(number: 3, text: "Get personalized workout guidance", isCompleted: false)
+            }
+
+            Button {
+                handleStartSession()
+            } label: {
+                HStack {
+                    Image(systemName: "play.fill")
+                    Text("Start First Session")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+        }
+        .padding(DesignTokens.Spacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.lg)
+                .fill(Color.App.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DesignTokens.Radius.lg)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.App.primary.opacity(0.5), Color.App.secondary.opacity(0.5)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+        )
     }
 
     // MARK: - Header Section
@@ -232,7 +327,7 @@ struct ContentView: View {
                     title: "Workout Tips",
                     color: .yellow
                 ) {
-                    // TODO: Navigate to tips
+                    showWorkoutTips = true
                     HapticManager.shared.impact(style: .light)
                 }
 
@@ -241,7 +336,7 @@ struct ContentView: View {
                     title: "History",
                     color: .purple
                 ) {
-                    // TODO: Navigate to history
+                    showHistory = true
                     HapticManager.shared.impact(style: .light)
                 }
 
@@ -250,7 +345,7 @@ struct ContentView: View {
                     title: "Goals",
                     color: .green
                 ) {
-                    // TODO: Navigate to goals
+                    showGoals = true
                     HapticManager.shared.impact(style: .light)
                 }
             }
@@ -947,6 +1042,381 @@ struct HelpCenterView: View {
 
 // MARK: - AVFoundation Import
 import AVFoundation
+
+// MARK: - Onboarding Step
+struct OnboardingStep: View {
+    let number: Int
+    let text: String
+    let isCompleted: Bool
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(isCompleted ? Color.App.success : Color.App.primary.opacity(0.2))
+                    .frame(width: 24, height: 24)
+
+                if isCompleted {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                } else {
+                    Text("\(number)")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.App.primary)
+                }
+            }
+
+            Text(text)
+                .font(DesignTokens.Typography.bodySmall)
+                .foregroundColor(isCompleted ? Color.App.success : Color.App.textSecondary)
+                .strikethrough(isCompleted)
+        }
+    }
+}
+
+// MARK: - Workout Tips View
+struct WorkoutTipsView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let tips = [
+        WorkoutTip(
+            category: "Form",
+            title: "Perfect Your Squat",
+            description: "Keep your chest up, weight in your heels, and knees tracking over your toes.",
+            icon: "figure.strengthtraining.traditional",
+            color: .orange
+        ),
+        WorkoutTip(
+            category: "Recovery",
+            title: "Rest Between Sets",
+            description: "For strength: 2-3 minutes. For hypertrophy: 60-90 seconds. For endurance: 30-45 seconds.",
+            icon: "clock.fill",
+            color: .cyan
+        ),
+        WorkoutTip(
+            category: "Nutrition",
+            title: "Pre-Workout Fuel",
+            description: "Eat a balanced meal 2-3 hours before, or a light snack 30-60 minutes before training.",
+            icon: "leaf.fill",
+            color: .green
+        ),
+        WorkoutTip(
+            category: "Mindset",
+            title: "Progressive Overload",
+            description: "Gradually increase weight, reps, or sets over time to continue making progress.",
+            icon: "chart.line.uptrend.xyaxis",
+            color: .purple
+        ),
+        WorkoutTip(
+            category: "Safety",
+            title: "Warm Up Properly",
+            description: "5-10 minutes of light cardio followed by dynamic stretches prepares your body for exercise.",
+            icon: "flame.fill",
+            color: .red
+        )
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.App.background.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: DesignTokens.Spacing.md) {
+                        ForEach(tips) { tip in
+                            WorkoutTipCard(tip: tip)
+                        }
+                    }
+                    .screenPadding()
+                    .padding(.top, DesignTokens.Spacing.md)
+                }
+            }
+            .navigationTitle("Workout Tips")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(Color.App.primary)
+                }
+            }
+        }
+    }
+}
+
+struct WorkoutTip: Identifiable {
+    let id = UUID()
+    let category: String
+    let title: String
+    let description: String
+    let icon: String
+    let color: Color
+}
+
+struct WorkoutTipCard: View {
+    let tip: WorkoutTip
+
+    var body: some View {
+        HStack(alignment: .top, spacing: DesignTokens.Spacing.md) {
+            ZStack {
+                Circle()
+                    .fill(tip.color.opacity(0.15))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: tip.icon)
+                    .font(.system(size: 22))
+                    .foregroundColor(tip.color)
+            }
+
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                Text(tip.category.uppercased())
+                    .font(DesignTokens.Typography.labelSmall)
+                    .foregroundColor(tip.color)
+
+                Text(tip.title)
+                    .font(DesignTokens.Typography.titleSmall)
+                    .foregroundColor(Color.App.textPrimary)
+
+                Text(tip.description)
+                    .font(DesignTokens.Typography.bodySmall)
+                    .foregroundColor(Color.App.textSecondary)
+                    .lineSpacing(2)
+            }
+
+            Spacer()
+        }
+        .padding(DesignTokens.Spacing.md)
+        .background(Color.App.surface)
+        .cornerRadius(DesignTokens.Radius.lg)
+    }
+}
+
+// MARK: - Goals View
+struct GoalsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var weeklySessionGoal: Int = 3
+    @State private var dailyMinutesGoal: Int = 20
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.App.background.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: DesignTokens.Spacing.xl) {
+                        // Weekly Sessions Goal
+                        GoalCard(
+                            title: "Weekly Sessions",
+                            description: "How many times per week do you want to train?",
+                            icon: "calendar",
+                            color: .green,
+                            value: $weeklySessionGoal,
+                            range: 1...7,
+                            suffix: "sessions"
+                        )
+
+                        // Daily Minutes Goal
+                        GoalCard(
+                            title: "Session Duration",
+                            description: "Target length for each coaching session",
+                            icon: "clock.fill",
+                            color: .cyan,
+                            value: $dailyMinutesGoal,
+                            range: 5...60,
+                            suffix: "minutes"
+                        )
+
+                        // Current Progress
+                        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                            Text("This Week")
+                                .font(DesignTokens.Typography.titleMedium)
+                                .foregroundColor(Color.App.textPrimary)
+
+                            HStack(spacing: DesignTokens.Spacing.md) {
+                                ProgressRing(progress: 0, goal: weeklySessionGoal, label: "Sessions")
+                                ProgressRing(progress: 0, goal: dailyMinutesGoal * weeklySessionGoal, label: "Minutes")
+                            }
+                        }
+                        .padding(DesignTokens.Spacing.lg)
+                        .background(Color.App.surface)
+                        .cornerRadius(DesignTokens.Radius.lg)
+                    }
+                    .screenPadding()
+                    .padding(.top, DesignTokens.Spacing.md)
+                }
+            }
+            .navigationTitle("Goals")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(Color.App.primary)
+                }
+            }
+        }
+    }
+}
+
+struct GoalCard: View {
+    let title: String
+    let description: String
+    let icon: String
+    let color: Color
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let suffix: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                    .foregroundColor(color)
+
+                Text(title)
+                    .font(DesignTokens.Typography.titleSmall)
+                    .foregroundColor(Color.App.textPrimary)
+            }
+
+            Text(description)
+                .font(DesignTokens.Typography.bodySmall)
+                .foregroundColor(Color.App.textSecondary)
+
+            HStack {
+                Button {
+                    if value > range.lowerBound {
+                        value -= 1
+                        HapticManager.shared.impact(style: .light)
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(value > range.lowerBound ? Color.App.primary : Color.App.textTertiary)
+                }
+
+                Spacer()
+
+                VStack {
+                    Text("\(value)")
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.App.textPrimary)
+
+                    Text(suffix)
+                        .font(DesignTokens.Typography.labelSmall)
+                        .foregroundColor(Color.App.textSecondary)
+                }
+
+                Spacer()
+
+                Button {
+                    if value < range.upperBound {
+                        value += 1
+                        HapticManager.shared.impact(style: .light)
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(value < range.upperBound ? Color.App.primary : Color.App.textTertiary)
+                }
+            }
+        }
+        .padding(DesignTokens.Spacing.lg)
+        .background(Color.App.surface)
+        .cornerRadius(DesignTokens.Radius.lg)
+    }
+}
+
+struct ProgressRing: View {
+    let progress: Int
+    let goal: Int
+    let label: String
+
+    private var percentage: Double {
+        guard goal > 0 else { return 0 }
+        return min(Double(progress) / Double(goal), 1.0)
+    }
+
+    var body: some View {
+        VStack(spacing: DesignTokens.Spacing.sm) {
+            ZStack {
+                Circle()
+                    .stroke(Color.App.border, lineWidth: 8)
+                    .frame(width: 80, height: 80)
+
+                Circle()
+                    .trim(from: 0, to: percentage)
+                    .stroke(Color.App.primary, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(-90))
+
+                Text("\(progress)/\(goal)")
+                    .font(DesignTokens.Typography.labelMedium)
+                    .foregroundColor(Color.App.textPrimary)
+            }
+
+            Text(label)
+                .font(DesignTokens.Typography.labelSmall)
+                .foregroundColor(Color.App.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Session History View
+struct SessionHistoryView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.App.background.ignoresSafeArea()
+
+                VStack(spacing: DesignTokens.Spacing.xl) {
+                    Spacer()
+
+                    // Empty state
+                    ZStack {
+                        Circle()
+                            .fill(Color.App.primary.opacity(0.1))
+                            .frame(width: 120, height: 120)
+
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 50))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.purple, .blue],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
+
+                    VStack(spacing: DesignTokens.Spacing.sm) {
+                        Text("No Sessions Yet")
+                            .font(DesignTokens.Typography.headlineSmall)
+                            .foregroundColor(Color.App.textPrimary)
+
+                        Text("Your workout history will appear here after you complete your first coaching session.")
+                            .font(DesignTokens.Typography.bodyMedium)
+                            .foregroundColor(Color.App.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, DesignTokens.Spacing.xl)
+                    }
+
+                    Spacer()
+                }
+            }
+            .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(Color.App.primary)
+                }
+            }
+        }
+    }
+}
 
 #Preview {
     ContentView()

@@ -23,6 +23,36 @@ enum ConnectionState: Equatable {
     }
 }
 
+// MARK: - Session Summary Data
+struct SessionSummary {
+    let duration: TimeInterval
+    let date: Date
+
+    var formattedDuration: String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        if minutes > 0 {
+            return "\(minutes)m \(seconds)s"
+        }
+        return "\(seconds)s"
+    }
+
+    var motivationalMessage: String {
+        switch duration {
+        case 0..<60:
+            return "Every second counts! Come back for more."
+        case 60..<300:
+            return "Solid start! Keep building the habit."
+        case 300..<600:
+            return "Great session! You're making progress."
+        case 600..<1200:
+            return "Impressive dedication! You're on fire! 🔥"
+        default:
+            return "Amazing workout! You're a champion! 🏆"
+        }
+    }
+}
+
 struct AISessionView: View {
     @StateObject private var viewModel = AISessionViewModel()
     @Environment(\.dismiss) private var dismiss
@@ -30,6 +60,8 @@ struct AISessionView: View {
     @State private var pulseScale: CGFloat = 1.0
     @State private var showErrorAlert = false
     @State private var showEndSessionConfirmation = false
+    @State private var showSessionSummary = false
+    @State private var sessionSummary: SessionSummary?
 
     // Connection tips that rotate while connecting
     private let connectionTips = [
@@ -116,6 +148,13 @@ struct AISessionView: View {
             }
         }
         .trackScreen("AISession")
+        .sheet(isPresented: $showSessionSummary) {
+            if let summary = sessionSummary {
+                SessionSummaryView(summary: summary) {
+                    dismiss()
+                }
+            }
+        }
     }
 
     // MARK: - Top Bar
@@ -429,8 +468,262 @@ struct AISessionView: View {
     }
 
     private func endSession() async {
+        let duration = viewModel.sessionDuration
         await viewModel.disconnect()
-        dismiss()
+
+        // Only show summary if session was meaningful (> 5 seconds)
+        if duration > 5 {
+            sessionSummary = SessionSummary(duration: duration, date: Date())
+            showSessionSummary = true
+        } else {
+            dismiss()
+        }
+    }
+}
+
+// MARK: - Session Summary View
+struct SessionSummaryView: View {
+    let summary: SessionSummary
+    let onDismiss: () -> Void
+
+    @State private var animateStats = false
+    @State private var showConfetti = false
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
+    var body: some View {
+        ZStack {
+            Color.App.background.ignoresSafeArea()
+
+            // Confetti overlay for longer sessions
+            if showConfetti && summary.duration > 300 {
+                ConfettiView()
+                    .ignoresSafeArea()
+            }
+
+            VStack(spacing: DesignTokens.Spacing.xxl) {
+                Spacer()
+
+                // Success indicator
+                ZStack {
+                    Circle()
+                        .fill(Color.App.success.opacity(0.1))
+                        .frame(width: 120, height: 120)
+                        .scaleEffect(animateStats ? 1.1 : 0.8)
+
+                    Circle()
+                        .fill(Color.App.success.opacity(0.2))
+                        .frame(width: 90, height: 90)
+                        .scaleEffect(animateStats ? 1 : 0.9)
+
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(Color.App.success)
+                        .scaleEffect(animateStats ? 1 : 0)
+                }
+
+                // Session Complete text
+                VStack(spacing: DesignTokens.Spacing.sm) {
+                    Text("Session Complete!")
+                        .font(DesignTokens.Typography.headlineLarge)
+                        .foregroundColor(Color.App.textPrimary)
+
+                    Text(summary.motivationalMessage)
+                        .font(DesignTokens.Typography.bodyLarge)
+                        .foregroundColor(Color.App.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, DesignTokens.Spacing.lg)
+                }
+                .opacity(animateStats ? 1 : 0)
+                .offset(y: animateStats ? 0 : 20)
+
+                // Stats cards
+                HStack(spacing: DesignTokens.Spacing.md) {
+                    SummaryStatCard(
+                        icon: "clock.fill",
+                        value: summary.formattedDuration,
+                        label: "Duration",
+                        color: .cyan
+                    )
+                    .opacity(animateStats ? 1 : 0)
+                    .offset(y: animateStats ? 0 : 30)
+
+                    SummaryStatCard(
+                        icon: "flame.fill",
+                        value: "+1",
+                        label: "Streak Day",
+                        color: .orange
+                    )
+                    .opacity(animateStats ? 1 : 0)
+                    .offset(y: animateStats ? 0 : 30)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.xl)
+
+                // Achievement unlocked (for first session)
+                if summary.duration > 60 {
+                    achievementCard
+                        .opacity(animateStats ? 1 : 0)
+                        .offset(y: animateStats ? 0 : 30)
+                }
+
+                Spacer()
+
+                // Done button
+                Button {
+                    HapticManager.shared.impact(style: .medium)
+                    onDismiss()
+                } label: {
+                    Text("Done")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(.horizontal, DesignTokens.Spacing.xl)
+                .padding(.bottom, DesignTokens.Spacing.xxxl)
+                .opacity(animateStats ? 1 : 0)
+            }
+        }
+        .onAppear {
+            HapticManager.shared.notification(type: .success)
+
+            if reduceMotion {
+                animateStats = true
+                showConfetti = true
+            } else {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.2)) {
+                    animateStats = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showConfetti = true
+                }
+            }
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private var achievementCard: some View {
+        HStack(spacing: DesignTokens.Spacing.md) {
+            ZStack {
+                Circle()
+                    .fill(Color.yellow.opacity(0.2))
+                    .frame(width: 50, height: 50)
+
+                Image(systemName: "star.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.yellow)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Achievement Progress")
+                    .font(DesignTokens.Typography.labelMedium)
+                    .foregroundColor(Color.App.textSecondary)
+
+                Text("Getting Started")
+                    .font(DesignTokens.Typography.titleSmall)
+                    .foregroundColor(Color.App.textPrimary)
+            }
+
+            Spacer()
+
+            Text("1/3")
+                .font(DesignTokens.Typography.labelMedium)
+                .foregroundColor(Color.App.textTertiary)
+        }
+        .padding(DesignTokens.Spacing.md)
+        .background(Color.App.surface)
+        .cornerRadius(DesignTokens.Radius.lg)
+        .padding(.horizontal, DesignTokens.Spacing.xl)
+    }
+}
+
+// MARK: - Summary Stat Card
+struct SummaryStatCard: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: DesignTokens.Spacing.sm) {
+            ZStack {
+                Circle()
+                    .fill(color.opacity(0.15))
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: icon)
+                    .font(.system(size: 24))
+                    .foregroundColor(color)
+            }
+
+            Text(value)
+                .font(DesignTokens.Typography.headlineSmall)
+                .foregroundColor(Color.App.textPrimary)
+
+            Text(label)
+                .font(DesignTokens.Typography.labelSmall)
+                .foregroundColor(Color.App.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(DesignTokens.Spacing.lg)
+        .background(Color.App.surface)
+        .cornerRadius(DesignTokens.Radius.lg)
+    }
+}
+
+// MARK: - Confetti View
+struct ConfettiView: View {
+    @State private var confettiPieces: [ConfettiPiece] = []
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(confettiPieces) { piece in
+                    ConfettiPieceView(piece: piece, screenHeight: geometry.size.height)
+                }
+            }
+        }
+        .onAppear {
+            if !reduceMotion {
+                generateConfetti()
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func generateConfetti() {
+        for _ in 0..<30 {
+            confettiPieces.append(ConfettiPiece())
+        }
+    }
+}
+
+struct ConfettiPiece: Identifiable {
+    let id = UUID()
+    let x: CGFloat = CGFloat.random(in: 0...1)
+    let delay: Double = Double.random(in: 0...0.5)
+    let rotation: Double = Double.random(in: 0...360)
+    let color: Color = [Color.App.primary, Color.App.secondary, .yellow, .orange, .cyan, .purple].randomElement()!
+    let size: CGFloat = CGFloat.random(in: 6...12)
+}
+
+struct ConfettiPieceView: View {
+    let piece: ConfettiPiece
+    let screenHeight: CGFloat
+
+    @State private var offsetY: CGFloat = -50
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(piece.color)
+            .frame(width: piece.size, height: piece.size * 1.5)
+            .rotationEffect(.degrees(rotation))
+            .position(x: UIScreen.main.bounds.width * piece.x, y: offsetY)
+            .onAppear {
+                withAnimation(.easeIn(duration: Double.random(in: 2...3)).delay(piece.delay)) {
+                    offsetY = screenHeight + 50
+                    rotation = piece.rotation + Double.random(in: 180...720)
+                }
+            }
     }
 }
 
